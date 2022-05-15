@@ -1,0 +1,828 @@
+<!--
+Portal opening audio curtosy of Mystery on flashkit.com
+Font curtosy of velvetyne.fr 
+-->
+<!DOCTYPE html>
+<head>
+    <title> Draw the Portal </title>
+	<!-- Messy CSS, no time to fix... (probably ever) -->
+    <style>
+		#effects {
+			margin-left        : -40vmin;
+			width              : 80vmin;
+			-webkit-box-shadow : inset 0 0 10px #000000, inset 0 0 10px #000000, inset 0 0 10px #000000;
+			-moz-box-shadow    : inset 0 0 10px #000000, inset 0 0 10px #000000, inset 0 0 10px #000000;
+			box-shadow         : inset 0 0 10px #000000, inset 0 0 10px #000000, inset 0 0 10px #000000;
+			border             : 2px black solid;
+		}
+		canvas{
+			position : absolute;
+		}
+		video{
+			margin-left : -40vmin;
+			width       : 80vmin;
+			position    : absolute;
+		}
+		body{
+			background : black;
+		}
+		@font-face {
+			font-family : 'PortalFont';
+			src :    url('./Fonts/Trickster-Regular.eot');
+			src :    url('./Fonts/Trickster-Regular.eot?#iefix') format('embedded-opentype'),
+					 url('./Fonts/Trickster-Regular.woff') format('woff'),
+					 url('./Fonts/Trickster-Regular.woff2') format('woff2');
+			font-weight : normal;
+			font-style  : normal;
+		}
+		h1{
+			font-family : 'PortalFont';	
+			color       : rgb(255,150,0);
+		}
+		#result{
+			padding : 4vmin;
+		}
+		button {
+			background-color : #333;
+			font-family      : 'PortalFont';	
+			border           : none;
+			color            : rgb(255,150,0);
+			padding          : 3vmin;
+			text-align       : center;
+			text-decoration  : none;
+			display          : inline-block;
+			font-size        : 4vmin;
+			width            : 35vmin;
+			margin-bottom    : 1vmin;
+			cursor           : pointer;
+		}
+		#score {
+			font-family     : 'PortalFont';	
+			color           : rgb(255,150,0);
+			padding         : 3vmin;
+			text-align      : center;
+			text-decoration : none;
+			font-size       : 6vmin;
+		}
+		input[type=text] {
+			padding    : 1vmin;
+			box-sizing : border-box;
+			width      : 35vmin;
+			font-size  : 4vmin;
+			text-align : center;
+			background : rgb(255,230,200);
+		}
+		#scoresContainer {
+			font-family     : 'PortalFont';	
+			color           : white;
+			text-align      : center;
+			text-decoration : none;
+			font-size 		: 2.5vmin;
+			width           : 60vmin;
+		}
+		table {
+			width           : 60vmin;
+		}
+		th {
+			font-size : 3.5vmin;
+			color     : rgb(255,150,0);
+		}
+		.loading {
+			font-family : 'PortalFont';	
+			color       : white;
+			position    : absolute;
+			top         : 44px;
+			width       : 100%;
+			z-index	    : 1;
+		}
+		a:link {
+			text-decoration: none;
+		}
+    </style>
+    <script>
+        var CAMERA_CANVAS     = null;
+        var EFFECTS_CANVAS    = null;
+		var CANVAS_SCALER     = 1;
+		const SIZE 	          = 100;
+		const INTERVAL        = 42;
+		
+		var THRESHOLD         = 20;
+		
+		var COLOR             = [4, 104, 39];
+		var PATH		      = [];
+		const PATH_LIFETIME   = 2000; // milliseconds
+		
+		var PARTICLES         = [];
+		var CHAOS 		      = 10;
+		const G               = [0, 1];
+		
+		var SCORE             = 0;
+		const SCORE_THRESHOLD = 0.95;
+		var GAME_OVER         = false;
+		
+		var START_TIME        = new Date().getTime();
+		var END_TIME          = null;
+		
+		var WIN_INTERVAL	  = null;
+		
+		var CONTENT = {
+			step1Image : null,
+			step2Image : null,
+			step3Image : null,
+			step4Image : null,
+			openSound  : null
+		};
+		
+		var STEPS			  = 1;
+		var MAX_STEPS		  = 4;
+		var STEP_IMAGE_SIZE	  = 400;
+		
+		var SHOW_LOCATIONS	  = false;
+		var IS_FLIPPED		  = false;
+		var HIGH_QUALITY	  = true;
+		
+		function main() {
+			CAMERA_CANVAS         = document.getElementById('camera');
+            CAMERA_CANVAS.width   = SIZE;
+            CAMERA_CANVAS.height  = SIZE;
+			EFFECTS_CANVAS        = document.getElementById('effects');
+            EFFECTS_CANVAS.width  = SIZE;
+            EFFECTS_CANVAS.height = SIZE;
+			
+			EFFECTS_CANVAS.addEventListener('mousedown', handleClick); 
+			
+			loadExternalContent();
+        }
+		
+		function save(){
+			var name=document.getElementById("name").value;
+			if(name==""){
+				alert("Enter your name!");
+				return;
+			}
+			var param={
+				"request_type":"save_score",
+				"score":SCORE,
+				"name":document.getElementById("name").value,
+				"start_time":START_TIME,
+				"end_time":END_TIME,
+				"path":PATH
+			}
+			document.getElementById("loading").style.display = "";
+			//
+			document.getElementById("name").disabled=true;
+			document.getElementById("saveButton").disabled=true;
+			var url="Php/server.php";
+			httpPostAsync(url,
+				"param="+JSON.stringify(param),
+				function(resultString){
+					var obj=JSON.parse(resultString);
+					
+					document.getElementById("name").style.display="none";
+					document.getElementById("saveButton").style.display="none";
+					document.getElementById("score").style.display="none";
+					document.getElementById("loading").style.display = "none";
+				}
+			);
+		}
+		
+		function start(){
+			START_TIME = new Date().getTime();
+			END_TIME = null;
+			GAME_OVER = false;
+			PATH = [];
+			SCORE = 0;
+			document.getElementById("video").style.display="";
+			document.getElementById("game").style.display="";
+			document.getElementById("result").style.display="none";
+			clearInterval(WIN_INTERVAL);
+		}
+		
+		function onComplete(){
+			document.getElementById("game").style.display="none";
+			document.getElementById("result").style.display="";
+			document.getElementById("name").disabled=false;
+			document.getElementById("saveButton").disabled=false;
+			document.getElementById("name").style.display="";
+			document.getElementById("saveButton").style.display="";
+			document.getElementById("score").style.display="";
+			
+			const formattedScore = (SCORE * 100).toFixed(1) + " %";
+			document.getElementById("score").innerHTML="Score: "+formattedScore;
+		}
+
+		function updateImage(video) {
+			CANVAS_SCALER = Math.max(video.videoHeight, video.videoWidth) / SIZE;
+			const height  = video.videoHeight / CANVAS_SCALER;
+			const width   = video.videoWidth / CANVAS_SCALER;
+			
+			var ctx = CAMERA_CANVAS.getContext("2d");
+			ctx.canvas.width  = width;
+			ctx.canvas.height = height;
+			ctx.drawImage(video, 0, 0, width, height);
+			
+			ctx = EFFECTS_CANVAS.getContext("2d");
+			ctx.canvas.width  = video.videoWidth;
+			ctx.canvas.height = video.videoHeight;
+			
+			if (GAME_OVER == false) {
+				const pixelLocations = getPointerPixels();	
+				if (SHOW_LOCATIONS == true) {
+					showLocations(pixelLocations)
+				}
+				if (pixelLocations.length > 0) {	
+					const centerPoint = average(pixelLocations);
+					const scaledPoint = scaleVector(centerPoint, CANVAS_SCALER);
+					scaledPoint.time  = new Date().getTime();
+					PATH.push(scaledPoint);
+				}
+				keepRecentPartOfPath();
+				SCORE = calculateRoundness();
+				if (SCORE >= SCORE_THRESHOLD) {
+					GAME_OVER = true;
+					END_TIME  = new Date().getTime();
+					
+					CONTENT.openSound.play();
+					startPathAnimation();
+				}
+			} else {
+				const opacity = (new Date().getTime() - END_TIME) / 1000;
+				const portalColor = "rgba(0,0,0," + opacity + ")";
+				fillPortal(portalColor);
+				
+				// Delay score to appear after portal is black
+				const area	     = getPolygonArea();
+				const radius     = Math.sqrt(area / Math.PI) / 2;
+				showScore(SCORE, getBoundingBoxCenterOfPath(), (opacity - 1), radius);
+			}
+			
+			updateParticles(EFFECTS_CANVAS);
+			
+			if (STEPS <= MAX_STEPS) {
+				drawStepImage();
+			}
+		}
+		
+		
+		function loadExternalContent(){
+			var toLoad = MAX_STEPS;
+			CONTENT.step1Image=new Image();
+			CONTENT.step1Image.src = 'Images/step1.png';
+			CONTENT.step1Image.onload = function () {
+				toLoad--;
+				if(toLoad==0){
+					beginGame();
+				}
+			}
+			CONTENT.step2Image=new Image();
+			CONTENT.step2Image.src = 'Images/step2.png';
+			CONTENT.step2Image.onload = function () {
+				toLoad--;
+				if(toLoad==0){
+					beginGame();
+				}
+			}
+			CONTENT.step3Image=new Image();
+			CONTENT.step3Image.src = 'Images/step3.png';
+			CONTENT.step3Image.onload = function () {
+				toLoad--;
+				if(toLoad==0){
+					beginGame();
+				}
+			}
+			CONTENT.step4Image=new Image();
+			CONTENT.step4Image.src = 'Images/step4.png';
+			CONTENT.step4Image.onload = function () {
+				toLoad--;
+				if(toLoad==0){
+					beginGame();
+				}
+			}
+			CONTENT.openSound=new Audio('Sounds/PortalOpen.mp3');
+		}
+		
+		function beginGame(){
+			var constraints = { video: true };
+			var permission 	= navigator.mediaDevices.getUserMedia(constraints);
+			permission.then(
+				function(stream) {
+					var video 		= document.getElementById('video');
+					video.srcObject = stream;
+					video.play();
+					setInterval(updateImage, INTERVAL, video);
+					document.getElementById("loading").style.display = "none";
+				}
+			).catch(
+				function(err) {
+				console.log(err);
+					alert("camera error");
+				}
+			);
+		}
+		
+		function drawStepImage(){
+			const context = EFFECTS_CANVAS.getContext("2d");
+			const width   = context.canvas.width;
+			const height  = context.canvas.height;
+			const x       = width / 2  - STEP_IMAGE_SIZE / 2;
+			const y       = height / 2 - STEP_IMAGE_SIZE / 2;
+			 
+			var image;
+			switch (STEPS) {
+				case 1: 
+					image = CONTENT.step1Image;
+					break;
+				case 2: 
+					image = CONTENT.step2Image;
+					break;
+				case 3: 
+					image = CONTENT.step3Image;
+					break;
+				case 4: 
+					image = CONTENT.step4Image;
+					break;
+			}
+			
+			context.fillStyle = "black";
+			context.fillRect(0, 0, width, height);
+			context.drawImage(image, x, y);
+			
+			context.font		 = "bold 20px Calibri";
+			context.fillStyle	 = "rgb(200,200,200)";
+			context.textAlign	 = "center";
+			context.textBaseline = "bottom";
+			context.fillText("Click to continue...", (x + STEP_IMAGE_SIZE / 2), height - STEP_IMAGE_SIZE / 6);
+		}
+		
+		function trajectoryEuclideanDistance(t1, t2) {
+			var trajectoryDistance = 0;
+			for (var i = 0; i < t1.length; i++) {
+				trajectoryDistance += distance(t1[i], t2[i]);
+			}
+			return trajectoryDistance;
+		}
+		
+		// We gradually transform the drawn portal into a circle
+		function startPathAnimation() {
+			completePath();
+			const center = getBoundingBoxCenterOfPath();
+			
+			// we select a circle with same area as the drawn portal
+			const area	 = getPolygonArea();
+			const radius = Math.sqrt(area / Math.PI);
+			
+			// we take the angle to the first point
+			const angle  = Math.atan2(PATH[0][1]-center[1], PATH[0][0]-center[0]);
+			
+			// generate two potential future trajectories (CW and CCW)
+			var trajectoryA = [];
+			var trajectoryB = [];
+			for(var i=0;i<PATH.length;i++){
+				trajectoryA.push([
+					center[0] + radius * Math.cos(angle+Math.PI*2*i/PATH.length),
+					center[1] + radius * Math.sin(angle+Math.PI*2*i/PATH.length)
+				]);
+				trajectoryB.push([
+					center[0] + radius * Math.cos(angle-Math.PI*2*i/PATH.length),
+					center[1] + radius * Math.sin(angle-Math.PI*2*i/PATH.length)
+				]);
+			}
+			
+			// select as the target the most similar one to drawn trajectory
+			var futureTrajectory = trajectoryA;
+			if (trajectoryEuclideanDistance(PATH, trajectoryB) <
+			    trajectoryEuclideanDistance(PATH, trajectoryA)) {
+				futureTrajectory = trajectoryB;
+			}
+				
+			// begin animation
+			const animationSpeed = 10;
+			WIN_INTERVAL = setInterval(function(){
+				for (var i = 0; i < PATH.length; i++) {
+					if(distance(PATH[i], futureTrajectory[i]) > animationSpeed) {					
+						var difference = subtractVectors(futureTrajectory[i], PATH[i]);
+						var magnitude  = distance(difference, [0, 0]);
+						var velocity   = scaleVector(difference, animationSpeed / magnitude);
+						const newLoc   = addVectors(PATH[i], velocity);
+						PATH[i]        = newLoc;
+					}
+				}
+			}, INTERVAL);
+		}
+		
+		function getBoundingBoxCenterOfPath() {
+			var bounds = { minX: Infinity, maxX:0, minY: Infinity, maxY: 0 };
+			for(var i = 0; i < PATH.length; i++) {
+				bounds.minX = Math.min(bounds.minX, PATH[i][0]);
+				bounds.minY = Math.min(bounds.minY, PATH[i][1]);
+				bounds.maxX = Math.max(bounds.maxX, PATH[i][0]);
+				bounds.maxY = Math.max(bounds.maxY, PATH[i][1]);
+			}
+			return [(bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2];
+		}
+		
+		function completePath() {
+			var points = getInterpolatedPoints(PATH[PATH.length-1], PATH[0], 5);
+			points.shift();
+			PATH = PATH.concat(points);
+		}
+		
+		function getPointerPixels(){
+			const context   = CAMERA_CANVAS.getContext("2d");
+			const imageData = context.getImageData(0, 0, SIZE, SIZE);
+			const oneDArray = imageData.data;
+			
+			var pixelLocations = [];
+			const labColor = rgb2lab(COLOR);
+			for (var y = 0; y < SIZE; y++) { 
+				for (var x = 0; x < SIZE; x++) { 
+					const r = oneDArray[ y*SIZE*4 + x*4 + 0 ];
+					const g = oneDArray[ y*SIZE*4 + x*4 + 1 ];
+					const b = oneDArray[ y*SIZE*4 + x*4 + 2 ];
+					if (distance(labColor, rgb2lab([r,g,b])) < THRESHOLD) {
+						if (IS_FLIPPED) {
+							pixelLocations.push([SIZE - x - 1, y]);
+						} else { 
+							pixelLocations.push([x, y]);
+						}
+					}
+				}
+			}
+			return pixelLocations;
+		}
+			
+		function showLocations(locations) {
+			const context     = EFFECTS_CANVAS.getContext("2d");
+			context.fillStyle = "white";
+			for (var i = 0; i < locations.length; i++) {
+				const scaledLocation = scaleVector(locations[i], CANVAS_SCALER);
+				context.fillRect(...scaledLocation, 2, 2);
+			}
+			context.fill();
+		}
+		
+		function handleClick(event) {
+			if (GAME_OVER == true) {
+				onComplete();
+			} else if (STEPS <= MAX_STEPS) {
+				STEPS++;
+				if(STEPS == MAX_STEPS + 1){
+					start();
+				}
+			} else {
+				const location  = getCursorPosition(event);
+				const scaledLoc = scaleVector(location, SIZE);
+				const context   = CAMERA_CANVAS.getContext('2d');
+				const imageData = context.getImageData(...scaledLoc, 1, 1);
+				const oneDArray = imageData.data;
+				COLOR[0] = oneDArray[0];
+				COLOR[1] = oneDArray[1];
+				COLOR[2] = oneDArray[2];
+				
+				// showing selected regions briefly
+				SHOW_LOCATIONS = true;
+				setTimeout( function() {
+					SHOW_LOCATIONS = false;
+				}, PATH_LIFETIME / 2);
+			}
+		}
+		
+		function getCursorPosition(event) {
+			const rect = EFFECTS_CANVAS.getBoundingClientRect();
+			const max  = Math.max(EFFECTS_CANVAS.clientWidth, 
+								  EFFECTS_CANVAS.clientHeight);
+			var   x    = (event.clientX - rect.left) / max;
+			const y    = (event.clientY - rect.top) / max;
+			
+			if (IS_FLIPPED) {
+				x = 1 - x;
+			}
+			
+			return [x,y];
+		}
+		
+		function average(locations) {
+			var loc = [0, 0];
+			for (var i = 0; i < locations.length; i++) {
+				loc[0] += locations[i][0];
+				loc[1] += locations[i][1];
+			}
+			loc[0] /= locations.length;
+			loc[1] /= locations.length;
+			return loc;
+		}
+		
+		function keepRecentPartOfPath() {
+			const now=new Date().getTime();
+			while (PATH.length > 0 && now-PATH[0].time > PATH_LIFETIME) {
+				PATH.shift();
+			}
+		}
+		
+		function drawSegment(from, to, color = "black", thickness = 2) { 
+			const context = EFFECTS_CANVAS.getContext("2d");
+			context.beginPath();
+			context.moveTo(...from);
+			context.lineTo(...to);
+			context.lineWidth   = thickness;
+			context.strokeStyle = color;
+			context.stroke();
+		}
+		
+		function calculateRoundness() {
+			const length     = getPolygonLength();
+			const area	     = getPolygonArea();
+			const R		     = length / (Math.PI * 2);
+			const circleArea = Math.PI * R * R;
+			const roundness  = area / circleArea;
+			return roundness;
+		}
+		
+		function getPolygonLength() {
+			var length = 0;
+			for (var i = 0; i < PATH.length; i++) {
+				var nextI = i + 1;
+				if (nextI == PATH.length) {
+					nextI = 0;
+				}
+				length+=distance(PATH[i], PATH[nextI]);
+			}
+			return length;
+		}
+		
+		function getPolygonArea() {
+			var area = 0;
+			for (var i = 0; i < PATH.length; i++) {
+				var nextI = i + 1;
+				if (nextI == PATH.length) {
+					nextI = 0;
+				}
+				area += PATH[i][0] * PATH[nextI][1];
+				area -= PATH[i][1] * PATH[nextI][0];
+			}
+			area = Math.abs(area) / 2
+			return area;
+		}	
+		
+		class Particle {
+			constructor(location, velocity) {
+				this.location = location;
+				this.velocity = velocity;
+				this.life 	  = 10;
+				this.green 	  = 100 + Math.round(Math.random() * 100); 
+			}
+			
+			move() {
+				this.velocity = addVectors(this.velocity, G)
+				this.location = addVectors(this.location, this.velocity);
+				this.life--;
+			}
+			
+			draw() {
+				const oldLocation = subtractVectors(this.location, this.velocity);
+				var opacity       = this.life / 10;		
+				var thickness     = 2;		
+				var color 	      = "rgba(255," + this.green + ",0," + opacity + ")";	
+				drawSegment(this.location, oldLocation, color, thickness);
+				
+				if (HIGH_QUALITY) {
+					// drawing a glow for each particle
+					opacity			  = opacity / 30;
+					thickness         = 32;
+					color 	          = "rgba(255," + this.green + ",0," + opacity + ")";	
+					drawSegment(this.location, oldLocation, color, thickness);
+				}
+			}
+		}
+		
+		function getInterpolatedPoints(p1, p2, maxDist) {
+			var points  = [];
+			const dist  = distance(p1, p2);
+			const steps = dist / maxDist;
+			for(var i = 0; i < steps; i++) {
+				points.push([
+					p1[0] * ( 1 - i / steps) + p2[0] * ( i / steps),
+					p1[1] * ( 1 - i / steps) + p2[1] * ( i / steps)
+				]);
+			}
+			return points;
+		}
+		
+		function updateParticles() {
+			for (var i=1; i < PATH.length; i++) {
+				var points = getInterpolatedPoints(PATH[i - 1], PATH[i], 5);
+				for(var j = 0; j < points.length; j++) { 
+					var location=[
+						points[j][0] + CHAOS * (Math.random() - 0.5) * 1,
+						points[j][1] + CHAOS * (Math.random() - 0.5) * 1
+					]
+					var velocity = [
+						CHAOS * (Math.random() - 0.5),
+						CHAOS * (Math.random() - 0.5)
+					];
+					if (i > 0) {
+						const normalizedLength = 2 / points.length;
+						const movement = scaleVector(subtractVectors(PATH[i - 1], PATH[i]), normalizedLength);
+						velocity = addVectors(velocity, movement);
+					}
+					PARTICLES.push(new Particle(location, velocity));
+				}
+			}
+			for (var i = 0; i < PARTICLES.length; i++) {
+				PARTICLES[i].move();
+				PARTICLES[i].draw();
+			}
+			while(PARTICLES.length > 0 && PARTICLES[0].life == 0){ 
+				PARTICLES.shift();
+			}
+		}
+		
+		function distance(p1, p2) {
+            var dist = 0;
+            for (var i = 0; i < p1.length; i++) {
+                dist += (p1[i] - p2[i]) * (p1[i] - p2[i]);
+            }
+            return Math.sqrt(dist);
+        }
+		
+		function addVectors(v1, v2) {
+			var newV=[
+				v1[0] + v2[0],
+				v1[1] + v2[1]
+			];
+			return newV;
+		}
+		
+		function subtractVectors(v1, v2) {
+			var newV=[
+				v1[0] - v2[0],
+				v1[1] - v2[1]
+			];
+			return newV;
+		}
+		
+		function scaleVector(v, scaler) {
+			var newV=[
+				v[0] * scaler,
+				v[1] * scaler
+			];
+			return newV;
+		}
+		
+		function showScore(score, location, opacity, size) {
+			const context 		 = EFFECTS_CANVAS.getContext("2d");
+			context.font		 = "bold " + size + "px PortalFont";
+			context.fillStyle	 = "rgba(255,150,0," + (opacity - 1) + ")";
+			context.textAlign 	 = "center";
+			context.textBaseline = "middle";
+			const formattedScore = (score * 100).toFixed(1) + " %";
+			context.fillText(formattedScore, ...location);
+			context.font		 = "bold " + (size * 0.3) + "px Calibri";
+			context.fillStyle	 = "rgba(200,200,200," + (opacity - 1) + ")";
+			context.fillText("Click to continue...", location[0], location[1] + (size * 0.6));
+		}
+		
+		function fillPortal(color) {
+			var context = EFFECTS_CANVAS.getContext("2d");
+			context.beginPath();
+			context.moveTo(...PATH[0]);
+			for (var i = 1; i < PATH.length; i++) {
+				context.lineTo(...PATH[i]);
+			}
+			context.fillStyle = color;
+			context.fill();
+		}
+		
+		function httpPostAsync(url, dataString, callback){
+			var request = new XMLHttpRequest();
+			request.open('POST', url, true);
+			request.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+			request.onreadystatechange = function() { 
+				if (request.readyState == 4 && request.status == 200){
+					callback(request.responseText);
+				}
+			}
+			request.send( dataString );
+		}
+		
+		// Converting to LAB color space
+		function rgb2lab(rgb) {
+			var r = rgb[0] / 255;
+			var g = rgb[1] / 255;
+			var b = rgb[2] / 255;
+			var x, y, z;
+
+			r = (r > 0.04045) ? Math.pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
+			g = (g > 0.04045) ? Math.pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
+			b = (b > 0.04045) ? Math.pow((b + 0.055) / 1.055, 2.4) : b / 12.92;
+
+			x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+			y = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 1.00000;
+			z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+
+			x = (x > 0.008856) ? Math.pow(x, 1/3) : (7.787 * x) + 16/116;
+			y = (y > 0.008856) ? Math.pow(y, 1/3) : (7.787 * y) + 16/116;
+			z = (z > 0.008856) ? Math.pow(z, 1/3) : (7.787 * z) + 16/116;
+
+			return [(116 * y) - 16, 500 * (x - y), 200 * (y - z)];
+		}
+		
+		function showHighScores() {
+			var param={
+				"request_type" : "get_scores"
+			}
+			var url="Php/server.php";
+			
+			document.getElementById("result").style.display      = "none";
+			document.getElementById("highScores").style.display  = "";
+			document.getElementById("scoresContainer").innerHTML = "";
+			document.getElementById("loading").style.display     = "";
+			httpPostAsync(url,
+				"param="+JSON.stringify(param),
+				function(resultString){
+					var obj=JSON.parse(resultString);
+					document.getElementById("scoresContainer").innerHTML=formatScores(obj);
+					document.getElementById("loading").style.display = "none";
+				}
+			);
+		}
+		
+		function formatScores(results) {
+			const all    = results.all;
+			const recent = results.recent;
+			var str= "<table>";
+			str+="<tr>";
+			str+="<th colspan='2'>All</th>";
+			str+="<td style='padding-left:1vmin;'></td>";
+			str+="<th colspan='2'>24h</th>";
+			str+="</tr>";
+			for(var i = 0; i < all.length; i++) {
+				str+="<tr>";
+				str+="<td>" + all[i]["Name"] + "</td>";
+				str+="<td>" + (all[i]["Score"] * 100).toFixed(1) + " %" + "</td>";
+				str+="<td></td>";
+				str+="<td>" + recent[i]["Name"] + "</td>";
+				str+="<td>" +(recent[i]["Score"] * 100).toFixed(1) + " %" + "</td>";
+				str+="</tr>";
+			}
+			str += "</table>";
+			return str;
+		}
+		
+		function goBack(){
+			document.getElementById("highScores").style.display="none";
+			document.getElementById("result").style.display="";
+		}
+		
+		function toggleQuality() {
+			HIGH_QUALITY = !HIGH_QUALITY;
+		}
+		
+		function toggleFlip() {
+			IS_FLIPPED = !IS_FLIPPED;
+			if (IS_FLIPPED) {
+				document.getElementById("video").setAttribute("style", "transform: rotateY(180deg);-webkit-transform:rotateY(180deg); -moz-transform:rotateY(180deg); ");
+			}else{
+				document.getElementById("video").setAttribute("style", "");
+			}
+		}
+		
+    </script>
+</head>
+<body onload="main()">
+	<center>
+		<h1>
+			<span style="padding-left:10px;padding-right:10px;">Draw the Portal</span>
+			<img onclick="toggleFlip()" src="Images/flip.png" title="Flip" style="height: 5vmin;cursor:pointer;"> 
+			<img onclick="toggleQuality()" src="Images/quality.png" title="Toggle Quality" style="height: 5vmin;cursor:pointer;"> 
+			
+		</h1>
+		<h3 id="loading" class="loading">Loading ...</h3>
+		<div id="game">
+			<video id="video" style="display:none;"></video>
+			<canvas id="camera" hidden></canvas>
+			<canvas id="effects"></canvas>
+		</div>
+		<div id="result" style="display:none;">
+			<span id="score"></span>
+			<br>
+			<input type="text" id="name" placeholder="Who are you?"></input>
+			<br>
+			<button id="saveButton" onclick="save()">Save</button>
+			<br>
+			<button onclick="start()">Restart</button>
+			<br>
+			<button onclick="showHighScores()">High-Scores</button>
+		</div>
+		<div id="highScores"  style="display:none;">
+			<div id="scoresContainer">
+			</div>
+			<br>
+			<button onclick="goBack()">Back</button>
+		</div>
+	</center>
+</body>
+</html>
+
+
+
